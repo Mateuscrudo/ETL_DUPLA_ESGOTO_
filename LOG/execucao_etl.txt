@@ -1,0 +1,11 @@
+Roteiro: BASE ESGOTO DEEP ROTEIRO.xlsx | registros=6276
+AppDeep: Registros - AppDeep.xlsx | registros=9682
+Matrículas Roteiro=5780
+Matrículas AppDeep=6171
+Matrículas em ambas=1908
+Somente Roteiro=3872
+Somente AppDeep=4263
+Base consolidada=10040
+Fotos normalizadas=104120
+Histórico=15958
+Duplicados AppDeep=166
