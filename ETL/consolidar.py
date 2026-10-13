@@ -40,7 +40,6 @@ def limpar_endereco(endereco):
     if not endereco:
         return None
 
-    original = endereco
 
     # =====================================================
     # REGRA 1 - CANTAGALO
@@ -87,20 +86,21 @@ def limpar_endereco(endereco):
 
     return endereco
 
-    # Escapa caracteres especiais da matrícula
-    matricula_regex = re.escape(matricula)
 
-    # Remove a matrícula somente se estiver NO INÍCIO.
-    padrao = rf"^\s*{matricula_regex}\s*[-–—:;|]*\s*"
-
-    endereco_limpo = re.sub(
-        padrao,
-        "",
-        endereco,
-        flags=re.IGNORECASE
-    )
-
-    return endereco_limpo.strip()
+def link_registro(row):
+    """Somente o link fornecido pela exportação, sem construir URLs por matrícula."""
+    from urllib.parse import urlsplit
+    if row is None:
+        return None
+    value = row.get("Link Backoffice")
+    if value is None or pd.isna(value):
+        return None
+    value = str(value).strip()
+    try:
+        parsed = urlsplit(value)
+        return value if parsed.scheme in {"https", "http"} and parsed.hostname else None
+    except ValueError:
+        return None
 
 def consolidar(r, a):
     r_valid = r.dropna(subset=["_mat"]).copy()
@@ -109,7 +109,7 @@ def consolidar(r, a):
     # Último registro de cada fonte.
     r_latest = (
         r_valid
-        .sort_values(["_mat", "_dt"], na_position="first")
+        .sort_values(["_mat", "_dt"], na_position="first", kind="stable")
         .groupby("_mat")
         .tail(1)
         .set_index("_mat")
@@ -117,15 +117,15 @@ def consolidar(r, a):
 
     a_latest = (
         a_valid
-        .sort_values(["_mat", "_dt"], na_position="first")
+        .sort_values(["_mat", "_dt", "_ord"], na_position="first", kind="stable")
         .groupby("_mat")
         .tail(1)
         .set_index("_mat")
     )
 
-    # Visitas acumuladas por fonte.
-    r_vis = r_valid.groupby("_mat")["_vis"].max().fillna(0)
-    a_vis = a_valid.groupby("_mat")["_vis"].max().fillna(0)
+    # Acumulado do registro mais recente de cada sistema, nunca o máximo histórico.
+    r_vis = r_latest["_vis"].fillna(0)
+    a_vis = a_latest["_vis"].fillna(0)
 
     rk = set(r_vis.index)
     ak = set(a_vis.index)
@@ -177,6 +177,8 @@ def consolidar(r, a):
                 rr.get("_agent")
             )
 
+        assert latest is not None
+
         rv = float(r_vis.get(matricula, 0) or 0)
         av = float(a_vis.get(matricula, 0) or 0)
 
@@ -193,7 +195,13 @@ def consolidar(r, a):
             "Data de Execução": data_execucao,
             # REGRA: soma dos acumulados das duas bases.
             "Quantidade de Visitas": int(rv + av),
+            # Roteiro já convertido na leitura; status acompanha a fonte mais recente.
+            "status": latest.get("_status"),
             "Agente Responsável": agente,
+            "origem_adesao": "APPDEEP" if latest is aa else "ROTEIRO",
+            "data_origem_adesao": data_execucao,
+            "link_appdeep": link_registro(latest) if latest is aa else None,
+            "registro_appdeep": nt(latest.get("Code Deep")) if latest is aa else None,
             "Origem dos Dados": (
                 "AMBOS" if matricula in rk and matricula in ak
                 else "ROTEIRO" if matricula in rk
@@ -201,33 +209,56 @@ def consolidar(r, a):
             ),
         })
 
-    base = pd.DataFrame(registros)
+    base = pd.DataFrame(registros, columns=[
+        "Matrícula", "Endereço", "Nome do Morador", "Bairro", "Data de Execução",
+        "Quantidade de Visitas", "status", "Agente Responsável", "Origem dos Dados",
+        "origem_adesao", "data_origem_adesao", "link_appdeep", "registro_appdeep",
+    ])
 
-    # Histórico: mantém inclusive duplicados do AppDeep, identificados como tal.
-    historico_r = pd.DataFrame({
-        "Matrícula": r["_mat"],
-        "Origem": "ROTEIRO",
-        "Data": r["_dt"],
-        "Visitas": r["_vis"],
-        "Agente": r["_agent"],
-        "Endereço": r["Endereço"].map(nt),
-        "Bairro": r["Bairro"].map(nt),
-        "Nome do Morador": r["Nome Completo"].map(nt),
-        "Status do Registro": "ORIGINAL",
-    })
+    # Uma linha por tentativa do Roteiro, com os dados próprios da tentativa.
+    eventos = []
+    for _, row in r.iterrows():
+        tentativas = []
+        for numero in (1, 2, 3):
+            data_original = row.get(f"Data tentativa (T{numero})")
+            status = nt(row.get(f"Status tentativa (T{numero})"))
+            agente = nt(row.get(f"Equipe (T{numero})"))
+            if pd.notna(data_original) or status is not None or agente is not None:
+                tentativas.append({
+                    "Data": pd.to_datetime(data_original, errors="coerce", dayfirst=True),
+                    "Status": status, "Agente": agente,
+                    "Visitas": 1, "Tentativa": f"T{numero}",
+                })
+        # A execução é uma visita própria; linhas sem tentativas preservam o registro.
+        if not tentativas or row["_status"] == "Adesão executada":
+            tentativas.append({
+                "Data": row["_dt"], "Status": row["_status"],
+                "Agente": row["_agent"], "Visitas": 1,
+                "Tentativa": "EXECUÇÃO" if row["_status"] == "Adesão executada" else "REGISTRO",
+            })
+        for evento in tentativas:
+            eventos.append({
+                "Matrícula": row["_mat"], "Origem": "ROTEIRO",
+                "Endereço": nt(row.get("Endereço")), "Bairro": nt(row.get("Bairro")),
+                "Nome do Morador": nt(row.get("Nome Completo")),
+                "Status do Registro": "ORIGINAL", **evento,
+            })
+    colunas_hist = ["Matrícula", "Origem", "Data", "Visitas", "Agente", "Endereço",
+                    "Bairro", "Nome do Morador", "Status do Registro", "Status", "Tentativa"]
+    historico_r = pd.DataFrame(eventos, columns=colunas_hist)
 
+    # Envios repetidos não entram em nenhuma saída, inclusive no histórico.
+    a_hist = a[a["_dup"].eq(False)]
     historico_a = pd.DataFrame({
-        "Matrícula": a["_mat"],
-        "Origem": "APPDEEP",
-        "Data": a["_dt"],
-        "Visitas": a["_vis"],
-        "Agente": a["Nome do Agente"].map(nt),
-        "Endereço": a["Endereço"].map(nt),
-        "Bairro": a["Bairro"].map(nt),
-        "Nome do Morador": a["Nome completo"].map(nt),
-        "Status do Registro": np.where(
-            a["_dup"], "DUPLICADO", "ORIGINAL"
-        ),
+        "Matrícula": a_hist["_mat"], "Origem": "APPDEEP",
+        "Data": a_hist["_dt"], "Visitas": 1,
+        "Agente": a_hist["Nome do Agente"].map(nt),
+        "Endereço": a_hist["Endereço"].map(nt), "Bairro": a_hist["Bairro"].map(nt),
+        "Nome do Morador": a_hist["Nome completo"].map(nt),
+        "Status do Registro": "ORIGINAL", "Status": a_hist["_status"],
+        "Tentativa": "REGISTRO",
+        "link_appdeep": a_hist.apply(link_registro, axis=1),
+        "registro_appdeep": a_hist.get("Code Deep", pd.Series(None, index=a_hist.index)),
     })
 
     historico = (

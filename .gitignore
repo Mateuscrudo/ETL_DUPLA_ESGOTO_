@@ -1,100 +1,18 @@
-# =========================================================
-# PYTHON
-# =========================================================
-
 __pycache__/
-*.py[cod]
-*$py.class
-*.pyo
-
-# Ambientes virtuais
+*.pyc
 .venv/
-venv/
-env/
-ENV/
-
-# =========================================================
-# DADOS DE ORIGEM
-# =========================================================
-
-# Excel / CSV utilizados como entrada dos ETLs
-*.xlsx
-*.xls
-*.xlsm
-*.csv
-
-# Se futuramente existir uma pasta específica para dados brutos
-data/raw/
-raw/
-entrada/
-origem/
-
-# =========================================================
-# BANCOS GERADOS
-# =========================================================
-
-*.db
-*.sqlite
-*.sqlite3
-
-# Bases de saída
-SAIDA/
-saida/
-processed/
-
-# =========================================================
-# HISTÓRICO E BACKUPS
-# =========================================================
-
-HISTORICO/
-Historico/
-Histórico/
-backup/
-backups/
-
-# =========================================================
-# LOGS
-# =========================================================
-
-logs/
-*.log
-
-# =========================================================
-# STREAMLIT / SEGREDOS
-# =========================================================
-
+.env
 .streamlit/secrets.toml
-
-# =========================================================
-# ARQUIVOS TEMPORÁRIOS
-# =========================================================
-
-*.tmp
-*.temp
-*.bak
-*.swp
-*.swo
-~$*
-
-# =========================================================
-# SISTEMA OPERACIONAL
-# =========================================================
-
-Thumbs.db
-.DS_Store
-desktop.ini
-
-# =========================================================
-# IDE / EDITORES
-# =========================================================
-
-.vscode/
-.idea/
-
-# =========================================================
-# ARQUIVOS DE TESTE / VERIFICAÇÃO
-# =========================================================
-
-verificar_bancos.py
-verificar_esgoto.py
-teste_*.py
+work/
+logs/
+LOG/
+saida/
+SAIDA/
+SAIDA_AGUA/
+BACKUP/
+backups/
+*.db
+*.xlsx
+# Somente amostras sintéticas revisadas entram no Git.
+!ENTRADA/**/*.xlsx
+!Bases/*.db

@@ -1,3 +1,5 @@
+from io import BytesIO
+from .leitura_arquivo import ler_bytes
 import re
 import pandas as pd
 from openpyxl import load_workbook
@@ -25,7 +27,7 @@ def processar_fotos(roteiro_path, a):
     # =========================================================
 
     wb = load_workbook(
-        roteiro_path,
+        BytesIO(ler_bytes(roteiro_path)),
         read_only=False,
         data_only=False
     )
@@ -54,7 +56,7 @@ def processar_fotos(roteiro_path, a):
 
         data = pd.to_datetime(
             str(ws.cell(linha, coluna_data).value),
-            errors="coerce"
+            errors="coerce", dayfirst=True
         )
 
         # Só adiciona se tiver matrícula E hyperlink
@@ -75,6 +77,8 @@ def processar_fotos(roteiro_path, a):
                 )
             )
 
+    wb.close()
+
     # =========================================================
     # APPDEEP
     # =========================================================
@@ -86,7 +90,7 @@ def processar_fotos(roteiro_path, a):
         or "fotos" in coluna.lower()
     ]
 
-    for _, row in a.iterrows():
+    for _, row in a[a["_dup"].eq(False)].iterrows():
 
         matricula = row["_mat"]
 

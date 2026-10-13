@@ -6,7 +6,7 @@ from ETL.gerar_sql import gerar_sql
 from ETL.relatorio import salvar_relatorio
 
 
-def main():
+def executar():
     print("=== ETL ESGOTO ===")
 
     linhas = []
@@ -22,7 +22,7 @@ def main():
 
     # 4. Estatísticas
     rk = set(r["_mat"].dropna())
-    ak = set(a["_mat"].dropna())
+    ak = set(a.loc[a["_dup"].eq(False), "_mat"].dropna())
 
     ambos = len(rk & ak)
     somente_r = len(rk - ak)
@@ -39,27 +39,15 @@ def main():
         f"Base consolidada={len(base)}",
         f"Fotos normalizadas={len(fotos)}",
         f"Histórico={len(historico)}",
-        f"Duplicados AppDeep={int(a['_dup'].sum())}",
+        f"Duplicados AppDeep excluídos={int(a['_dup'].sum())}",
+        f"AppDeep após limpeza={int(a['_dup'].eq(False).sum())}",
+        f"Histórico sem matrícula={int(historico['Matrícula'].isna().sum())}",
+        f"Histórico sem data={int(historico['Data'].isna().sum())}",
+        f"Histórico sem status={int(historico['Status'].isna().sum())}",
+        f"Base sem status={int(base['status'].isna().sum())}",
     ])
 
-    # 5. Gerar Excel
-    arq_excel = gerar_excel(
-        base,
-        fotos,
-        historico
-    )
-
-    # 6. Gerar SQLite
-    arq_sqlite = gerar_sql(
-        base,
-        fotos,
-        historico
-    )
-
-    # 7. Gerar log
-    arq_log = salvar_relatorio(linhas)
-
-    # 8. Validações finais
+    # 5. Validar todas as estruturas antes de criar qualquer saída.
     if base["Matrícula"].isna().any():
         raise ValueError(
             "A Base_Consolidada possui matrícula vazia."
@@ -76,6 +64,30 @@ def main():
                 "Fotos_Normalizadas possui URL vazia."
             )
 
+    # 6. Gerar Excel
+    arq_excel = gerar_excel(
+        base,
+        fotos,
+        historico
+    )
+
+    # 7. Gerar SQLite
+    arq_sqlite = gerar_sql(
+        base,
+        fotos,
+        historico
+    )
+
+    linhas.append(
+        "STATUS=SUCESSO | Validações finais=OK | "
+        f"matrículas={base['Matrícula'].notna().sum()} | "
+        f"registros={len(base)} | fotos={len(fotos)} | "
+        f"histórico={len(historico)}"
+    )
+
+    # 8. Gerar log
+    arq_log = salvar_relatorio(linhas)
+
     print()
     print("=== RESULTADO ===")
     print(f"📊 Base Consolidada: {len(base):,}")
@@ -87,6 +99,14 @@ def main():
     print(f"📝 Log: {arq_log}")
     print()
     print("=== ETL CONCLUÍDO ===")
+
+
+def main():
+    try:
+        executar()
+    except Exception as erro:
+        salvar_relatorio([f"STATUS=FALHA | {type(erro).__name__}: {erro}"])
+        raise
 
 
 if __name__ == "__main__":
